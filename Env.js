@@ -1,4 +1,124 @@
 function Env(name, opts) {
+  const lowercaseHeaders = (headers) => {
+    return Object.keys(headers).reduce((obj, key) => {
+      obj[key.toLowerCase()] = headers[key]
+      return obj
+    }, {})
+  }
+
+  class Request {
+    constructor(data) {
+      Object.assign(this, data)
+      if (this.headers) this.headers = lowercaseHeaders(this.headers)
+    }
+  }
+
+  class Response {
+    constructor(data) {
+      Object.assign(this, data)
+      if (this.headers) this.headers = lowercaseHeaders(this.headers)
+      this.status = this.status || this.statusCode
+      this.statusCode = this.statusCode || this.status
+    }
+  }
+
+  const statusTexts = {
+    100: 'Continue',
+    101: 'Switching Protocols',
+    102: 'Processing',
+    103: 'Early Hints',
+    200: 'OK',
+    201: 'Created',
+    202: 'Accepted',
+    203: 'Non-Authoritative Information',
+    204: 'No Content',
+    205: 'Reset Content',
+    206: 'Partial Content',
+    207: 'Multi-Status',
+    208: 'Already Reported',
+    226: 'IM Used',
+    300: 'Multiple Choices',
+    301: 'Moved Permanently',
+    302: 'Found',
+    303: 'See Other',
+    304: 'Not Modified',
+    305: 'Use Proxy',
+    307: 'Temporary Redirect',
+    308: 'Permanent Redirect',
+    400: 'Bad Request',
+    401: 'Unauthorized',
+    402: 'Payment Required',
+    403: 'Forbidden',
+    404: 'Not Found',
+    405: 'Method Not Allowed',
+    406: 'Not Acceptable',
+    407: 'Proxy Authentication Required',
+    408: 'Request Timeout',
+    409: 'Conflict',
+    410: 'Gone',
+    411: 'Length Required',
+    412: 'Precondition Failed',
+    413: 'Payload Too Large',
+    414: 'URI Too Long',
+    415: 'Unsupported Media Type',
+    416: 'Range Not Satisfiable',
+    417: 'Expectation Failed',
+    418: "I'm a Teapot",
+    421: 'Misdirected Request',
+    422: 'Unprocessable Entity',
+    423: 'Locked',
+    424: 'Failed Dependency',
+    425: 'Too Early',
+    426: 'Upgrade Required',
+    428: 'Precondition Required',
+    429: 'Too Many Requests',
+    431: 'Request Header Fields Too Large',
+    451: 'Unavailable For Legal Reasons',
+    500: 'Internal Server Error',
+    501: 'Not Implemented',
+    502: 'Bad Gateway',
+    503: 'Service Unavailable',
+    504: 'Gateway Timeout',
+    505: 'HTTP Version Not Supported',
+    506: 'Variant Also Negotiates',
+    507: 'Insufficient Storage',
+    508: 'Loop Detected',
+    510: 'Not Extended',
+    511: 'Network Authentication Required'
+  }
+
+  const getStatusText = (code) => statusTexts[code] || 'Unknown'
+
+  const getDoneStatus = (data) => {
+    const status = data.status || data.statusCode
+    if (!status) return
+    if (typeof status === 'number') return status
+    const matched = String(status).match(/\b(\d{3})\b/)
+    return matched ? Number(matched[1]) : undefined
+  }
+
+  const normalizeQuanXDoneStatus = (data) => {
+    const code = getDoneStatus(data)
+    if (!code) return
+    data.status =
+      typeof data.status === 'string' &&
+      /^HTTP\/\d(?:\.\d)?\s+\d+/.test(data.status)
+        ? data.status
+        : `HTTP/1.1 ${code} ${getStatusText(code)}`
+  }
+
+  const toQuanXDoneVal = (val) => {
+    if (!val || typeof val !== 'object') return val
+    const data = Object.assign({}, val)
+    if (data.response && typeof data.response === 'object') {
+      Object.assign(data, data.response)
+      delete data.response
+      if (!getDoneStatus(data)) data.status = 200
+    }
+    normalizeQuanXDoneStatus(data)
+    return data
+  }
+
   class Http {
     constructor(env) {
       this.env = env
@@ -61,6 +181,10 @@ function Env(name, opts) {
       this.logSeparator = '\n'
       this.encoding = 'utf-8'
       this.startTime = new Date().getTime()
+      this.request =
+        'undefined' !== typeof $request ? new Request($request) : undefined
+      this.response =
+        'undefined' !== typeof $response ? new Response($response) : undefined
       Object.assign(this, opts)
       this.log('', `🔔${this.name}, 开始!`)
     }
@@ -887,6 +1011,18 @@ function Env(name, opts) {
       return new Promise((resolve) => setTimeout(resolve, time))
     }
 
+    /**
+     * 结束脚本。
+     *
+     * 对外统一使用 Loon/Surge 风格参数。
+     * 在 QX 环境自动转换为兼容格式。
+     *
+     * 返回自定义响应的示例:
+     *   请求阶段 $.done({ response: { status: 302, headers: { Location: url } } })
+     *   响应阶段 $.done({ status: 200, headers, body })
+     *
+     * @param {Object} val 传给 $done 的结果对象
+     */
     done(val = {}) {
       const endTime = new Date().getTime()
       const costTime = (endTime - this.startTime) / 1000
@@ -900,7 +1036,7 @@ function Env(name, opts) {
         case 'Egern':
         case 'Quantumult X':
         default:
-          $done(val)
+          $done(this.isQuanX() ? toQuanXDoneVal(val) : val)
           break
         case 'Node.js':
           process.exit(1)

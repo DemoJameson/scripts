@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "Env.js",
   "scripts": {
-    "dev": "http-server ."
+    "dev": "http-server .",
+    "build:env": "terser Env.js -c -m -o Env.min.js"
   },
   "dependencies": {
     "crypto-js": "^4.2.0",
@@ -13,6 +14,7 @@
     "tough-cookie": "^4.1.3"
   },
   "devDependencies": {
-    "prettier": "^3.2.5"
+    "prettier": "^3.2.5",
+    "terser": "^5.46.1"
   }
 }
